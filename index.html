@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>VEX Guia Turístico 🇲🇿</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;font-family:system-ui,sans-serif;height:100vh;width:100vw;overflow:hidden;touch-action:manipulation}
+  
+  .app{display:grid;grid-template-rows:1fr auto;height:100vh;width:100vw}
+  
+  .cam{position:relative;width:100%;height:100%;background:#000;overflow:hidden}
+  
+  #video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);background:#000}
+  #canvas{position:absolute;top:0;left:0;width:100%;height:100%;transform:scaleX(-1);pointer-events:none}
+  
+  .top{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;z-index:10;pointer-events:none}
+  
+  .pill{background:rgba(0,0,0,0.75);color:#00d4a8;padding:6px 14px;border-radius:20px;font-size:0.7rem;border:1px solid rgba(0,212,168,0.4)}
+  
+  .det{position:absolute;bottom:20px;left:16px;right:16px;background:rgba(0,0,0,0.8);padding:10px 16px;border-radius:25px;color:#00d4a8;font-size:0.75rem;text-align:center;border:1px solid rgba(0,212,168,0.3);z-index:10;pointer-events:none}
+  
+  .ctrl{background:#111827;padding:12px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #1e2d45}
+  
+  .face{display:flex;align-items:center;gap:10px;padding:8px;background:rgba(0,0,0,0.3);border-radius:12px}
+  
+  .eye{width:18px;height:18px;border-radius:50%;background:#00d4a8;box-shadow:0 0 6px #00d4a8;transition:background 0.3s}
+  
+  .mouth{width:22px;height:3px;background:#e8edf5;border-radius:2px;transition:all 0.3s}
+  .mouth.speaking{height:9px;border-radius:0 0 8px 8px;animation:talk 0.3s infinite alternate}
+  
+  @keyframes talk{0%{height:3px}100%{height:10px}}
+  
+  .ft{font-size:0.7rem;color:#888;flex:1}
+  
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  
+  button{padding:16px;border-radius:14px;border:1px solid #1e2d45;background:transparent;color:#e8edf5;font-size:0.9rem;cursor:pointer;font-family:inherit;touch-action:manipulation}
+  button:active{transform:scale(0.95)}
+  
+  button.primary{background:#00d4a8;border-color:#00d4a8;color:#000;font-weight:bold;font-size:1rem}
+  button.primary.listening{background:#ef4444;border-color:#ef4444;animation:pulse 1.5s infinite}
+  
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.5)}50%{box-shadow:0 0 0 20px rgba(239,68,68,0)}}
+  
+  button.secondary{background:rgba(0,212,168,0.1);border-color:#00d4a8;color:#00d4a8}
+  
+  .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#111827;border:1px solid #00d4a8;padding:10px 20px;border-radius:25px;z-index:1000;font-size:0.8rem;color:#e8edf5;opacity:0;transition:opacity 0.3s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="app">
+  
+  <div class="cam">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="top">
+      <span class="pill">🧠 CÉREBRO</span>
+      <span class="pill" id="statusPill">📷 Câmara</span>
+    </div>
+    <div class="det" id="detBar">🟡 A carregar IA Visual...</div>
+  </div>
+
+  <div class="ctrl">
+    <div class="face">
+      <div class="eye" id="eye1"></div>
+      <div class="eye" id="eye2"></div>
+      <div class="mouth" id="mouth"></div>
+      <span class="ft" id="faceText">Pronto para ajudar</span>
+    </div>
+    <div class="btns">
+      <button class="primary" id="btnSpeak" onclick="toggleMic()">🎤 FALAR</button>
+      <button class="secondary" onclick="analisar()">🔍 Analisar</button>
+      <button onclick="testarLocal()">🗺 Local</button>
+      <button onclick="limpar()">🗑 Limpar</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// 🔑 CONFIGURAÇÃO
+const GROQ_KEY = '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';
+
+const LOCAIS = {
+  'ilha de moçambique':{nome:'Ilha de Moçambique',provincia:'Nampula',direcao:'Norte',desc:'Património Mundial da UNESCO.',dica:'Visite o Palácio de São Paulo.'},
+  'praia do tofo':{nome:'Praia do Tofo',provincia:'Inhambane',direcao:'Sul',desc:'Paraíso do mergulho.',dica:'Outubro a março é a melhor época.'},
+  'catedral de maputo':{nome:'Catedral de Maputo',provincia:'Maputo',direcao:'Sul',desc:'Marco arquitetónico na capital.',dica:'Perto da Praça da Independência.'},
+  'lago niassa':{nome:'Lago Niassa',provincia:'Niassa',direcao:'Norte',desc:'Terceiro maior lago de África.',dica:'Visite as ilhas Likoma.'}
+};
+
+const PROMPT = 'És o cérebro de um robô guia de Moçambique. Responde em Português, 3 frases máx, com emojis 🇲🇿. Menciona província e direção.';
+
+// ESTADO
+let model=null, modelLoaded=false, cameraStream=null;
+let isListening=false, recognition=null;
+let ultimaResposta='';
+
+// 👁 CÂMARA
+async function startCamera(){
+  const v=document.getElementById('video');
+  if(!navigator.mediaDevices?.getUserMedia){
+    updateBar('❌ Browser não suporta câmara');
+    return;
+  }
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'environment',width:{ideal:640},height:{ideal:480}}, audio:false
+    });
+    v.srcObject=cameraStream;
+    await new Promise(r=>{
+      v.onloadedmetadata=()=>v.play().then(r).catch(r);
+      setTimeout(r,3000);
+    });
+    document.getElementById('statusPill').textContent='📷 Ativa';
+    updateBar('📷 Câmara ativa • Carregando IA...');
+    // Carregar modelo DEPOIS da câmara
+    loadModel();
+  }catch(e){
+    console.error(e);
+    updateBar('❌ Permita a câmara nas definições');
+  }
+}
+
+// 🧠 TENSORFLOW (CORRIGIDO - MAIS TEMPO)
+async function loadModel(){
+  const bar=document.getElementById('detBar');
+  
+  for(let i=0;i<30;i++){ // Tentar por 30 segundos
+    try{
+      bar.textContent='🟡 Carregando IA Visual... ('+(i+1)+'/30)';
+      console.log('Tentativa',i+1,'de carregar modelo...');
+      
+      // Usar modelo mais leve
+      model=await cocoSsd.load({
+        base: 'lite_mobilenet_v2'  // MODELO MAIS LEVE PARA CELULAR
+      });
+      
+      modelLoaded=true;
+      bar.textContent='🟢 IA Visual pronta!';
+      console.log('✅ Modelo carregado com sucesso!');
+      detectLoop();
+      return;
+      
+    }catch(e){
+      console.log('Falha na tentativa',i+1,':',e.message);
+      // Esperar 1 segundo antes de tentar de novo
+      await new Promise(r=>setTimeout(r,1000));
+    }
+  }
+  
+  // Se falhou todas as tentativas
+  bar.textContent='⚠️ IA Visual indisponível • Use os botões';
+  console.log('❌ Não foi possível carregar o modelo após 30 tentativas');
+}
+
+function detectLoop(){
+  if(!modelLoaded||!cameraStream) return;
+  detect();
+}
+
+async function detect(){
+  if(!modelLoaded||!cameraStream) return;
+  
+  const v=document.getElementById('video');
+  const c=document.getElementById('canvas');
+  const ctx=c.getContext('2d');
+  
+  if(!v.videoWidth){setTimeout(detect,500);return}
+  
+  try{
+    const p=await model.detect(v);
+    c.width=v.videoWidth;
+    c.height=v.videoHeight;
+    ctx.clearRect(0,0,c.width,c.height);
+    
+    p.forEach(o=>{
+      const[x,y,w,h]=o.bbox;
+      const conf=Math.round(o.score*100);
+      const color=conf>70?'#00d4a8':conf>40?'#f59e0b':'#ef4444';
+      ctx.strokeStyle=color;ctx.lineWidth=3;
+      ctx.strokeRect(x,y,w,h);
+      ctx.fillStyle=color;
+      ctx.font='bold 14px monospace';
+      ctx.fillText(`${o.class} ${conf}%`,x+4,y-6);
+    });
+    
+    if(p.length>0){
+      document.getElementById('detBar').textContent=`👁 ${p[0].class} (${Math.round(p[0].score*100)}%)`;
+    }
+  }catch(e){}
+  
+  setTimeout(detect,1500); // Mais lento para poupar bateria
+}
+
+function analisar(){
+  if(!cameraStream){falar('Câmara desligada.');return}
+  document.getElementById('detBar').textContent='🔍 Analisando...';
+  falar('Ambiente analisado. Faça uma pergunta sobre Moçambique!');
+}
+
+// 🤖 GROQ
+async function askGroq(q){
+  const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${GROQ_KEY}`},
+    body:JSON.stringify({
+      model:'llama-3.3-70b-versatile',
+      messages:[{role:'system',content:PROMPT},{role:'user',content:q}],
+      max_tokens:300,temperature:0.7
+    })
+  });
+  if(!r.ok) throw new Error('API error');
+  const d=await r.json();
+  return d.choices[0].message.content;
+}
+
+// 🎤 MICROFONE
+function toggleMic(){isListening?parar():ouvir()}
+
+function ouvir(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){falar('Microfone não suportado. Use o Chrome.');return}
+  
+  recognition=new SR();
+  recognition.lang='pt-MZ';
+  recognition.interimResults=false;
+  
+  recognition.onstart=()=>{
+    isListening=true;
+    document.getElementById('btnSpeak').textContent='⏹ OUVINDO';
+    document.getElementById('btnSpeak').classList.add('listening');
+    updateFace('listening');
+    document.getElementById('detBar').textContent='🎤 Fale agora...';
+  };
+  
+  recognition.onresult=e=>{
+    const t=e.results[0][0].transcript.trim();
+    if(t){parar();processar(t);}
+  };
+  
+  recognition.onerror=e=>{
+    parar();
+    if(e.error==='not-allowed') falar('Permita o microfone nas definições');
+  };
+  
+  recognition.onend=()=>parar();
+  recognition.start();
+}
+
+function parar(){
+  isListening=false;
+  if(recognition){try{recognition.stop()}catch(e){}}
+  document.getElementById('btnSpeak').textContent='🎤 FALAR';
+  document.getElementById('btnSpeak').classList.remove('listening');
+}
+
+// 💬 PROCESSAR
+async function processar(q){
+  updateFace('thinking');
+  document.getElementById('detBar').textContent='🤔 Pensando...';
+  
+  const ql=q.toLowerCase();
+  for(const[k,v] of Object.entries(LOCAIS)){
+    if(ql.includes(k)){
+      mostrar(`${v.nome} - ${v.provincia}, ${v.direcao}. ${v.desc} ${v.dica}`);
+      return;
+    }
+  }
+  
+  try{
+    const r=await askGroq(q);
+    mostrar(r);
+  }catch(e){
+    mostrar('Moçambique é incrível! Praias, ilhas e cultura rica. O que mais quer saber? 🇲🇿');
+  }
+}
+
+function mostrar(txt){
+  ultimaResposta=txt;
+  updateFace('speaking');
+  document.getElementById('detBar').textContent='🔊 '+txt.substring(0,50)+'...';
+  falar(txt);
+  setTimeout(()=>updateFace('idle'),5000);
+}
+
+function testarLocal(){
+  const k=Object.keys(LOCAIS);
+  processar(`Onde fica ${k[Math.floor(Math.random()*k.length)]}?`);
+}
+
+// 🔊 FALA
+function falar(txt){
+  if(!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  setTimeout(()=>{
+    const u=new SpeechSynthesisUtterance(txt);
+    u.lang='pt-BR';u.rate=0.9;u.pitch=1.0;
+    speechSynthesis.speak(u);
+  },100);
+}
+
+// 🎭 UI
+function updateFace(s){
+  const m=document.getElementById('mouth');
+  const t=document.getElementById('faceText');
+  const e1=document.getElementById('eye1');
+  const e2=document.getElementById('eye2');
+  
+  m.classList.remove('speaking');
+  const c={listening:'#ef4444',thinking:'#f59e0b',speaking:'#ff6b35',idle:'#00d4a8'};
+  e1.style.background=c[s]||c.idle;
+  e2.style.background=c[s]||c.idle;
+  if(s==='speaking') m.classList.add('speaking');
+  t.textContent={listening:'👂 Ouvindo...',thinking:'🤔 Pensando...',speaking:'🔊 Respondendo...',idle:'Pronto para ajudar'}[s]||'Pronto para ajudar';
+}
+
+function updateBar(m){document.getElementById('detBar').textContent=m}
+
+function limpar(){
+  ultimaResposta='';
+  updateFace('idle');
+  updateBar('🟢 Pronto');
+  speechSynthesis?.cancel();
+}
+
+function toast(m){
+  const t=document.getElementById('toast');
+  t.textContent=m;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// 🚀 INICIAR
+async function init(){
+  console.log('🧠 Cérebro iniciando...');
+  updateBar('📷 A ligar câmara...');
+  await startCamera();
+  toast('🧠 Cérebro ativo!');
+}
+
+document.addEventListener('DOMContentLoaded',()=>setTimeout(init,500));
+
+window.addEventListener('beforeunload',()=>{
+  if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
+  speechSynthesis?.cancel();
+});
+</script>
+</body>
+</html>
