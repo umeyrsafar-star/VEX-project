@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Super Central VEX</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+<style>
+:root{--bg:#000810;--accent:#00ffcc;--gold:#ffd700;--text:#e0e8f0;--border:#1a2a40;--panel:#0a1628}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;width:100vw;overflow:hidden;touch-action:manipulation}
+.central{display:grid;grid-template-rows:auto 1fr auto;height:100vh;max-width:600px;margin:0 auto}
+.header{background:linear-gradient(180deg,var(--panel),#000510);padding:12px 14px;border-bottom:1px solid var(--accent);display:flex;justify-content:space-between;align-items:center}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{font-size:26px}
+.logo-text{font-size:0.9rem;font-weight:bold;color:var(--accent)}
+.logo-sub{font-size:0.55rem;color:var(--accent);opacity:0.7}
+.pills{display:flex;gap:6px}
+.pill{padding:5px 10px;border-radius:12px;font-size:0.6rem;border:1px solid var(--border);background:rgba(0,255,204,0.05)}
+.pill.on{border-color:var(--accent);color:var(--accent)}
+.pill.nav{border-color:var(--gold);color:var(--gold)}
+.pill.ok{border-color:#00ff88;color:#00ff88}
+.main-view{position:relative;background:#000;overflow:hidden;flex:1}
+#cam{width:100%;height:100%;object-fit:cover}
+#canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.hud{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10}
+.hud-top{display:flex;justify-content:space-between;padding:10px 12px}
+.hud-item{background:rgba(0,0,0,0.85);padding:6px 12px;border-radius:12px;font-size:0.6rem;border:1px solid var(--border)}
+.hud-item.hl{border-color:var(--accent);color:var(--accent)}
+.hud-msg{position:absolute;bottom:20px;left:12px;right:12px;background:rgba(0,0,0,0.9);padding:16px;border-radius:18px;font-size:0.8rem;line-height:1.6;border:1px solid var(--accent);text-align:center}
+.hud-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.hud-center .arrow{font-size:5rem}
+.hud-center .label{font-size:0.85rem;color:var(--accent);margin-top:8px}
+.voice-wave{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);display:none;gap:4px;align-items:flex-end;height:40px}
+.voice-wave .bar{width:5px;background:var(--accent);border-radius:3px;animation:wave 0.8s infinite alternate}
+.voice-wave .bar:nth-child(1){height:15px;animation-delay:0s}
+.voice-wave .bar:nth-child(2){height:25px;animation-delay:0.1s}
+.voice-wave .bar:nth-child(3){height:35px;animation-delay:0.2s}
+.voice-wave .bar:nth-child(4){height:28px;animation-delay:0.3s}
+.voice-wave .bar:nth-child(5){height:18px;animation-delay:0.4s}
+@keyframes wave{0%{transform:scaleY(0.5)}100%{transform:scaleY(1)}}
+.start-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(circle at center,var(--panel),var(--bg));z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.start-overlay.hidden{display:none}
+.start-overlay .pulse-ring{width:120px;height:120px;border-radius:50%;border:3px solid var(--accent);animation:pulseRing 2s infinite;display:flex;align-items:center;justify-content:center;margin-bottom:30px}
+@keyframes pulseRing{0%,100%{transform:scale(1);opacity:0.5}50%{transform:scale(1.2);opacity:1}}
+.start-overlay .brain-icon{font-size:60px}
+.start-overlay .start-title{color:var(--accent);font-size:1.5rem;font-weight:bold;margin-bottom:8px}
+.start-overlay .start-sub{color:#888;font-size:0.8rem;margin-bottom:40px;text-align:center;padding:0 30px}
+.start-overlay .start-btn{background:var(--accent);color:#000;border:none;padding:20px 60px;border-radius:35px;font-size:1.2rem;font-weight:bold;cursor:pointer;font-family:inherit}
+.diag-box{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);color:var(--accent);padding:10px 15px;border-radius:10px;font-size:0.6rem;text-align:center;z-index:60;display:none;pointer-events:none}
+.panel{background:var(--panel);padding:10px 12px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--accent)}
+.intel-row{display:flex;gap:6px}
+.intel-box{flex:1;background:rgba(0,0,0,0.5);padding:8px;border-radius:8px;font-size:0.6rem;border:1px solid var(--border);text-align:center}
+.intel-box .val{color:var(--accent);font-size:1rem;font-weight:bold}
+.intel-box .lbl{color:#556;font-size:0.55rem;margin-top:2px}
+.btn-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:5px}
+.btn-row.nav-row{grid-template-columns:1fr 1fr}
+button{padding:14px 8px;border-radius:10px;border:1px solid var(--border);background:rgba(0,255,204,0.03);color:var(--text);font-size:0.75rem;cursor:pointer;font-family:inherit}
+button:active{transform:scale(0.95)}
+button.go{background:var(--accent);border-color:var(--accent);color:#000;font-weight:bold}
+button.nav{background:rgba(255,215,0,0.1);border-color:var(--gold);color:var(--gold)}
+button.stop{background:rgba(255,107,107,0.1);border-color:#ff6b6b;color:#ff6b6b}
+.toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--accent);padding:10px 20px;border-radius:25px;z-index:999;font-size:0.7rem;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="central">
+  <div class="header">
+    <div class="logo"><span class="logo-icon">🧠</span><div><div class="logo-text">SUPER CENTRAL VEX</div><div class="logo-sub">INTELIGENCIA AVANCADA</div></div></div>
+    <div class="pills"><span class="pill on" id="pillIA">IA</span><span class="pill" id="pillNav">PRONTO</span><span class="pill" id="pillDest">--</span></div>
+  </div>
+  <div class="main-view" id="mainView">
+    <video id="cam" autoplay playsinline muted></video><canvas id="canvas"></canvas>
+    <div class="start-overlay" id="startOverlay"><div class="pulse-ring"><div class="brain-icon">🧠</div></div><div class="start-title">SUPER CENTRAL VEX</div><div class="start-sub">Guia Turistico de Mocambique</div><button class="start-btn" id="startBtn">ATIVAR CENTRAL</button></div>
+    <div class="diag-box" id="diagBox"></div>
+    <div class="voice-wave" id="voiceWave"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+    <div class="hud"><div class="hud-top"><span class="hud-item hl" id="hudStatus">INICIANDO</span><span class="hud-item" id="hudGPS">Mocambique</span><span class="hud-item" id="hudObj">0</span></div><div class="hud-center" id="hudCenter"><div class="arrow">🧠</div><div class="label">Toque em ATIVAR CENTRAL</div></div><div class="hud-msg" id="hudMsg">Super Central VEX</div></div>
+  </div>
+  <div class="panel">
+    <div class="intel-row"><div class="intel-box"><div class="val" id="valHum">0</div><div class="lbl">Humanos</div></div><div class="intel-box"><div class="val" id="valObj">0</div><div class="lbl">Objetos</div></div><div class="intel-box"><div class="val" id="valDist">--</div><div class="lbl">Dist</div></div><div class="intel-box"><div class="val" id="valDest">--</div><div class="lbl">Destino</div></div></div>
+    <div class="btn-row"><button class="go" id="btnVoice" onclick="toggleVoice()">COMANDAR</button><button onclick="sugerirDestino()">SUGERIR</button><button onclick="gerarRelatorio()">STATUS</button></div>
+    <div class="btn-row nav-row"><button class="nav" id="btnNav" onclick="iniciarNavegacao()">NAVEGAR</button><button class="stop" onclick="pararTudo()">PARAR</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var API_KEY = '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';
+var DESTINOS = {'ilha de mocambique':{nome:'Ilha de Mocambique',prov:'Nampula',dir:'NORTE',cor:'#FF0000',seta:'⬆️',desc:'Patrimonio UNESCO',dica:'Palacio de Sao Paulo'},'praia do tofo':{nome:'Praia do Tofo',prov:'Inhambane',dir:'SUL',cor:'#0000FF',seta:'⬇️',desc:'Mergulho tubaroes',dica:'Outubro a marco'},'maputo':{nome:'Maputo',prov:'Maputo',dir:'SUL',cor:'#0000FF',seta:'⬇️',desc:'Capital vibrante',dica:'FEIMA e Mercado Central'},'lago niassa':{nome:'Lago Niassa',prov:'Niassa',dir:'CENTRO',cor:'#00FF00',seta:'➡️',desc:'Lago de Africa',dica:'Ilhas Likoma'}};
+var S = {cam:false,model:false,listening:false,dest:null,navigating:false,arrived:false,humans:0,objects:0,navStart:0,started:false,speaking:false};
+var model=null,camStream=null,recog=null,detectTimer=null;
+var selectedVoice=null,voicesLoaded=false,totalVoices=0;
+var currentUtterance=null;
+
+// 🔊 VOZES
+async function waitVoices(timeout){
+  if(!('speechSynthesis' in window)) return [];
+  var voices = window.speechSynthesis.getVoices();
+  if(voices && voices.length > 0) return voices;
+  return new Promise(function(resolve){var resolved=false;window.speechSynthesis.onvoiceschanged=function(){if(!resolved){resolved=true;resolve(window.speechSynthesis.getVoices());}};setTimeout(function(){if(!resolved){resolved=true;resolve(window.speechSynthesis.getVoices());}},timeout||3000);});
+}
+async function selecionarVoz(){
+  var voices = await waitVoices(3000);voicesLoaded=true;totalVoices=voices?voices.length:0;
+  if(voices&&voices.length>0){var ptVoice=null;for(var i=0;i<voices.length;i++){if(voices[i].lang&&voices[i].lang.indexOf('pt')!==-1){ptVoice=voices[i];break;}}selectedVoice=ptVoice||voices[0];mostrarDiagnostico(totalVoices,selectedVoice.name);}
+  else{selectedVoice=null;mostrarDiagnostico(0,'Nenhuma');}
+}
+function mostrarDiagnostico(total,nome){var d=document.getElementById('diagBox');d.textContent='Vozes: '+total+' | '+nome;d.style.display='block';setTimeout(function(){d.style.display='none';},4000);}
+
+// 🔊 FALA BLINDADA
+async function speak(texto){
+  if(!S.started||!texto||S.speaking) return;
+  S.speaking=true;document.getElementById('voiceWave').style.display='flex';
+  if(!voicesLoaded) await selecionarVoz();
+  if(!('speechSynthesis' in window)){S.speaking=false;document.getElementById('voiceWave').style.display='none';playBeep();return;}
+  if(selectedVoice){var ok=await tentarFalar(texto,selectedVoice);if(ok) return;}
+  var ok2=await tentarFalar(texto,null);if(ok2) return;
+  S.speaking=false;document.getElementById('voiceWave').style.display='none';playBeep();
+}
+
+function tentarFalar(texto,voz){
+  return new Promise(function(resolve){
+    var u=new SpeechSynthesisUtterance(texto);u.lang='pt-BR';u.rate=0.9;u.pitch=1.0;u.volume=1.0;
+    if(voz) u.voice=voz;
+    currentUtterance=u;
+    var resolved=false;
+    u.onstart=function(){resolved=true;document.getElementById('hudStatus').textContent='FALANDO';};
+    u.onend=function(){S.speaking=false;document.getElementById('voiceWave').style.display='none';document.getElementById('hudStatus').textContent='ATIVA';currentUtterance=null;if(!resolved)resolve(true);resolved=true;resolve(true);};
+    u.onerror=function(e){S.speaking=false;document.getElementById('voiceWave').style.display='none';document.getElementById('hudStatus').textContent='ERRO';mostrarDiagnostico(totalVoices,'Falha: '+e.error);currentUtterance=null;if(!resolved){resolved=true;resolve(false);}};
+    setTimeout(function(){if(!resolved){resolved=true;S.speaking=false;document.getElementById('voiceWave').style.display='none';document.getElementById('hudStatus').textContent='ATIVA';currentUtterance=null;resolve(false);}},10000);
+    window.speechSynthesis.cancel();
+    if(window.speechSynthesis.resume) window.speechSynthesis.resume();
+    setTimeout(function(){window.speechSynthesis.speak(u);},50);
+  });
+}
+function playBeep(){try{var AC=window.AudioContext||window.webkitAudioContext;var ctx=new AC();var osc=ctx.createOscillator(),gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.value=800;gain.gain.value=0.3;osc.start();setTimeout(function(){osc.stop();ctx.close();},300);}catch(e){}}
+
+// 🎤 MICROFONE
+function toggleVoice(){S.listening?stopListen():startListen();}
+function startListen(){if(S.listening||S.speaking) return;var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){hudMsg('Microfone nao suportado');return;}recog=new SR();recog.lang='pt-MZ';recog.interimResults=false;recog.onstart=function(){S.listening=true;document.getElementById('btnVoice').textContent='OUVINDO';document.getElementById('btnVoice').classList.add('on');document.getElementById('voiceWave').style.display='flex';hudMsg('A ouvir...');};recog.onresult=function(e){var t=e.results[0][0].transcript.trim();if(t){stopListen();hudMsg('Voce: '+t);processar(t);}};recog.onerror=function(){stopListen();};recog.onend=function(){stopListen();};try{recog.start();}catch(e){stopListen();}}
+function stopListen(){S.listening=false;if(recog){try{recog.stop();}catch(e){};recog=null;}document.getElementById('btnVoice').textContent='COMANDAR';document.getElementById('btnVoice').classList.remove('on');document.getElementById('voiceWave').style.display='none';}
+
+// 💬 PROCESSAR + 🤖 IA + 🗺️ NAVEGACAO
+function processar(cmd){var q=cmd.toLowerCase();if(/ola|oi|hey/.test(q)){responder('Ola! Sou a Super Central VEX. Em que posso ajudar?');return;}if(/status|relatorio/.test(q)){gerarRelatorio();return;}if(/parar|stop/.test(q)){pararTudo();return;}if(/navegar|iniciar/.test(q)){iniciarNavegacao();return;}if(/suger|recomend/.test(q)){sugerirDestino();return;}for(var k in DESTINOS){if(q.indexOf(k)!==-1||q.indexOf(DESTINOS[k].nome.toLowerCase())!==-1){definirDestino(DESTINOS[k]);return;}}consultarIA(cmd);}
+function consultarIA(p){hudMsg('Consultando IA...');var xhr=new XMLHttpRequest();xhr.open('POST','https://api.groq.com/openai/v1/chat/completions',true);xhr.setRequestHeader('Content-Type','application/json');xhr.setRequestHeader('Authorization','Bearer '+API_KEY);xhr.timeout=20000;xhr.onload=function(){if(xhr.status===200){try{var d=JSON.parse(xhr.responseText);if(d.choices&&d.choices[0])responder(d.choices[0].message.content);}catch(e){}}};xhr.onerror=function(){responder('Sem conexao.');};xhr.send(JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'system',content:'Guia de Mocambique. 2 frases em Portugues.'},{role:'user',content:p}],max_tokens:200}));}
+function responder(msg){hudMsg(msg);speak(msg);}
+function definirDestino(d){S.dest=d;S.arrived=false;document.getElementById('valDest').textContent=d.nome.split(' ')[0];document.getElementById('pillDest').textContent=d.nome;document.getElementById('pillDest').className='pill on';document.getElementById('hudCenter').innerHTML='<div class="arrow">'+d.seta+'</div><div class="label">'+d.dir+'</div>';hudMsg(d.nome);speak(d.nome+'. '+d.desc+'. Diga NAVEGAR.');}
+function iniciarNavegacao(){if(!S.dest){speak('Defina um destino.');return;}S.navigating=true;S.arrived=false;S.navStart=Date.now();document.getElementById('pillNav').textContent='NAVEGANDO';document.getElementById('pillNav').className='pill nav';enviarSinal(S.dest.cor,S.dest.dir);hudMsg('Navegando');speak('Navegando para '+S.dest.nome+'. Siga o robo!');}
+function verificarChegada(){if(!S.navStart) return;document.getElementById('valDist').textContent=Math.floor((Date.now()-S.navStart)/1000)+'s';if((Date.now()-S.navStart)>8000) chegou();}
+function chegou(){S.navigating=false;S.arrived=true;document.getElementById('pillNav').textContent='CHEGOU';document.getElementById('pillNav').className='pill ok';document.getElementById('hudCenter').innerHTML='<div class="arrow">🎯</div><div class="label">CHEGOU!</div>';hudMsg('Chegamos!');speak('Chegamos ao destino!');}
+function pararTudo(){S.navigating=false;S.arrived=false;S.dest=null;document.getElementById('pillNav').textContent='PARADO';document.getElementById('pillNav').className='pill';document.getElementById('hudCenter').innerHTML='<div class="arrow">🧠</div><div class="label">Em espera</div>';document.getElementById('valDist').textContent='--';document.getElementById('valDest').textContent='--';document.getElementById('pillDest').textContent='--';document.getElementById('pillDest').className='pill';hudMsg('Parado.');speak('Central em espera.');}
+function enviarSinal(corHex,dir){var overlay=document.createElement('div');overlay.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:180px;height:180px;border-radius:50%;background:'+corHex+';opacity:0.9;z-index:50;box-shadow:0 0 80px '+corHex;document.getElementById('mainView').appendChild(overlay);try{var AC=window.AudioContext||window.webkitAudioContext;var ctx=new AC();var osc=ctx.createOscillator(),gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.value=dir==='NORTE'?600:800;gain.gain.value=0.5;osc.start();setTimeout(function(){osc.stop();ctx.close();overlay.remove();},4000);}catch(e){}}
+function sugerirDestino(){var keys=Object.keys(DESTINOS);var d=DESTINOS[keys[Math.floor(Math.random()*keys.length)]];hudMsg('Sugiro: '+d.nome);speak('Sugiro '+d.nome+'. '+d.desc);}
+function gerarRelatorio(){var r='IA:'+(S.model?'OK':'OFF')+' Cam:'+(S.cam?'OK':'OFF')+' Hum:'+S.humans+' Obj:'+S.objects;hudMsg(r);speak(r);}
+
+// 📷 VISAO
+async function initCam(){var v=document.getElementById('cam');if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) return false;try{camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:480}},audio:false});v.srcObject=camStream;await new Promise(function(r){v.onloadedmetadata=function(){v.play().then(r).catch(r);};setTimeout(r,3000);});S.cam=true;return true;}catch(e){return false;}}
+async function initAI(){try{model=await cocoSsd.load({base:'lite_mobilenet_v2'});S.model=true;startDetect();return true;}catch(e){return false;}}
+function startDetect(){if(detectTimer)clearInterval(detectTimer);detectTimer=setInterval(detect,3000);}
+function stopDetect(){if(detectTimer){clearInterval(detectTimer);detectTimer=null;}}
+async function detect(){if(!S.model||!S.cam) return;var v=document.getElementById('cam'),c=document.getElementById('canvas'),ctx=c.getContext('2d');if(!v.videoWidth) return;try{var preds=await model.detect(v);c.width=v.videoWidth;c.height=v.videoHeight;ctx.clearRect(0,0,c.width,c.height);var h=0,o=0;for(var i=0;i<preds.length;i++){var p=preds[i],isHuman=p.class==='person';if(isHuman)h++;else o++;ctx.strokeStyle=isHuman?'#00ff88':'#ffaa00';ctx.lineWidth=isHuman?4:2;ctx.strokeRect(p.bbox[0],p.bbox[1],p.bbox[2],p.bbox[3]);ctx.fillStyle=isHuman?'#00ff88':'#ffaa00';ctx.font='bold 13px monospace';ctx.fillText((isHuman?'Humano':'Objeto'),p.bbox[0]+4,p.bbox[1]-6);}S.humans=h;S.objects=o;document.getElementById('valHum').textContent=h;document.getElementById('valObj').textContent=o;document.getElementById('hudObj').textContent=(h+o);if(S.navigating&&!S.arrived) verificarChegada();}catch(e){}}
+
+// 🚀 ATIVACAO
+document.getElementById('startBtn').addEventListener('click',async function(){document.getElementById('startOverlay').classList.add('hidden');S.started=true;document.getElementById('hudCenter').innerHTML='<div class="arrow">🔊</div><div class="label">Carregando vozes...</div>';document.getElementById('hudStatus').textContent='VOZES';hudMsg('Carregando sistema de voz...');await selecionarVoz();document.getElementById('hudCenter').innerHTML='<div class="arrow">🧠</div><div class="label">SUPER CENTRAL ATIVA</div>';document.getElementById('hudStatus').textContent='ATIVA';var saudacao='Ola! Sou a Super Central VEX, sua guia turistica de Mocambique. Em que posso ajudar?';hudMsg(saudacao);speak(saudacao);initCam().then(function(c){if(c) initAI();});setTimeout(function(){if(!S.dest&&!S.navigating) sugerirDestino();},15000);});
+function hudMsg(m){document.getElementById('hudMsg').textContent=m;console.log(m);}
+console.log('SUPER CENTRAL VEX - BLINDADA');
+window.addEventListener('beforeunload',function(){stopDetect();if(camStream) camStream.getTracks().forEach(function(t){t.stop();});if('speechSynthesis' in window) window.speechSynthesis.cancel();});
+</script>
+</body>
+</html>
